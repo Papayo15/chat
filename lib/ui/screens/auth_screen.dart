@@ -48,7 +48,17 @@ class _AuthScreenState extends State<AuthScreen>
     super.dispose();
   }
 
-  void _setError(String? e) => setState(() { _error = e; _loading = false; });
+  void _setError(String? e) {
+    setState(() { _error = e; _loading = false; });
+    if (e != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e),
+        backgroundColor: Colors.red[800],
+        duration: const Duration(seconds: 6),
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
 
   String _friendlyError(String code) {
     switch (code) {
@@ -192,7 +202,31 @@ class _AuthScreenState extends State<AuthScreen>
                 const Text('Identidad Híbrida · Privacidad Radical',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
+
+                // Error banner — shown at top so it's always visible
+                if (_error != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withAlpha(30),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.withAlpha(80)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(_error!,
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 13))),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
+                        onPressed: () => setState(() => _error = null),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                      ),
+                    ]),
+                  ),
 
                 // Invisible reCAPTCHA anchor for Firebase Phone Auth
                 const SizedBox(
@@ -220,21 +254,6 @@ class _AuthScreenState extends State<AuthScreen>
                     ],
                   ),
                 ),
-
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withAlpha(20),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.withAlpha(60)),
-                    ),
-                    child: Text(_error!,
-                        style: const TextStyle(
-                            color: Colors.redAccent, fontSize: 13)),
-                  ),
-                ],
 
                 const SizedBox(height: 20),
                 Row(children: [
