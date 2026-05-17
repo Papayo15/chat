@@ -1,0 +1,32 @@
+name: zoom_app
+description: Secure E2EE messaging and private video calling PWA.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^3.3.0
+  cloud_firestore: ^5.3.0
+  firebase_auth: ^5.1.0
+  cryptography: ^2.7.0
+  uuid: ^4.4.0
+  connectivity_plus: ^6.0.0
+  file_picker: ^8.0.0
+  rxdart: ^0.28.0
+  intl: ^0.19.0
+  mime: ^1.0.6
+  image: ^4.2.0
+  qr_flutter: ^4.1.0
+  crypto: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
