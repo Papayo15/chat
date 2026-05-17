@@ -25,9 +25,10 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  // Offline persistence disabled — Firestore's IndexedDB cache causes
+  // unhandled promise rejections in Safari/WebKit that freeze Dart's async loop.
   FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    persistenceEnabled: false,
   );
 
   final crypto = CryptoService();

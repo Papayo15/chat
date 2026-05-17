@@ -31232,7 +31232,7 @@ p=(q==null?$.bL=$.dG():q).e0("[DEFAULT]")
 q=$.dF()
 A.bZ(p,q,!0)
 o=A.aKQ(new A.cV(p))
-o.gdC().svM(o.gdC().gvM().axB(-1,null,!0,null,null,null,null))
+o.gdC().svM(o.gdC().gvM().axB(null,null,!1,null,null,null,null))
 n=new A.ab1($.aNQ().PS(),$.aNQ().M0(12,32))
 s=3
 return A.r(n.pm(),$async$Ob)
@@ -50853,14 +50853,14 @@ r.l(0,"webExperimentalAutoDetectLongPolling",s.r)
 r.l(0,"webExperimentalLongPollingOptions",null)
 r.l(0,"ignoreUndefinedProperties",!1)
 return r},
-a0U(a,b,c,d,e,f,g,h){var s=this,r=d==null?s.a:d,q=a==null?s.d:a
-return new A.z3(r,s.b,s.c,q,c===!0,s.f,s.r,s.w)},
+a0U(a,b,c,d,e,f,g,h){var s=this,r=d==null?s.a:d
+return new A.z3(r,s.b,s.c,s.d,c===!0,s.f,s.r,s.w)},
 axB(a,b,c,d,e,f,g){return this.a0U(a,b,null,c,d,e,f,g)},
 axA(a,b,c,d,e){return this.a0U(a,b,c,d,e,null,null,null)},
 j(a,b){var s
 if(b==null)return!1
 s=!1
-if(b instanceof A.z3)if(A.A(b)===A.A(this))if(b.a==this.a)s=b.d==this.d
+if(b instanceof A.z3)if(A.A(b)===A.A(this))s=b.a==this.a
 return s},
 gq(a){var s=this
 return A.S(A.A(s),s.a,s.b,s.c,s.d,s.f,s.r,s.w,!1,B.a,B.a,B.a,B.a,B.a,B.a,B.a,B.a,B.a,B.a,B.a)},
@@ -50893,14 +50893,13 @@ $.cx().l(0,p,o)
 return p},
 fj(a){return A.aKA(this,this.gIk(),a)},
 gvM(){return this.e},
-svM(a){var s,r,q,p=a.a,o=a.d
-this.e=this.e.axA(o,a.b,!1,p,a.c)
+svM(a){var s,r,q,p=a.a
+this.e=this.e.axA(a.d,a.b,!1,p,a.c)
 p=p==null||!p
 s=v.G
 if(p)r=s.firebase_firestore.memoryLocalCache(null)
 else{p=s.firebase_firestore
-if(o==null)o=null
-r=p.persistentLocalCache(t.e.a({cacheSizeBytes:o}))}p=t.e
+r=p.persistentLocalCache(t.e.a({cacheSizeBytes:null}))}p=t.e
 q=p.a({timeoutSeconds:null})
 this.d=p.a({ignoreUndefinedProperties:!1,experimentalForceLongPolling:null,experimentalAutoDetectLongPolling:null,experimentalLongPollingOptions:q,localCache:r})}}
 A.PY.prototype={
