@@ -12,6 +12,7 @@ import '../../models/app_user.dart';
 import '../../models/chat.dart';
 import '../../models/encrypted_message.dart';
 import '../../repositories/file_repository.dart';
+import '../../repositories/history_repository.dart';
 import '../../repositories/message_repository.dart';
 import '../../services/cloudinary_service.dart';
 import '../../repositories/user_repository.dart';
@@ -30,6 +31,7 @@ class ChatScreen extends StatefulWidget {
   final String otherUserUid;
   final MessageRepository msgRepo;
   final UserRepository userRepo;
+  final HistoryRepository historyRepo;
   final VideoCallService videoService;
   final P2PTransferService p2pService;
   final SyncViewerService syncService;
@@ -45,6 +47,7 @@ class ChatScreen extends StatefulWidget {
     required this.otherUserUid,
     required this.msgRepo,
     required this.userRepo,
+    required this.historyRepo,
     required this.videoService,
     required this.p2pService,
     required this.syncService,
@@ -68,6 +71,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _dataSaverMode = false;
   bool _loading = true;
   bool _isOffline = false;
+
+  // ── History mode ─────────────────────────────────────────────────────────
+  bool _historyMode = false;
+  HistoryPage? _historyPage;
+  bool _historyLoading = false;
 
   @override
   void initState() {
@@ -250,6 +258,79 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  // ── History helpers ───────────────────────────────────────────────────────
+
+  Future<void> _pickHistoryDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: DateTime(2000),
+      lastDate: now,
+      initialDatePickerMode: DatePickerMode.year,
+      helpText: 'Selecciona fecha para buscar mensajes',
+    );
+    if (picked == null || !mounted) return;
+    await _jumpToDate(picked);
+  }
+
+  Future<void> _jumpToDate(DateTime date) async {
+    setState(() { _historyMode = true; _historyLoading = true; _historyPage = null; });
+    try {
+      final page = await widget.historyRepo.jumpToDate(widget.chat.id, date);
+      if (mounted) setState(() { _historyPage = page; _historyLoading = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _historyLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error cargando historial: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadOlderHistory() async {
+    final ts = _historyPage?.oldestTs;
+    if (ts == null) return;
+    setState(() => _historyLoading = true);
+    try {
+      final page = await widget.historyRepo.loadOlder(
+        chatId: widget.chat.id,
+        beforeTs: ts,
+        anchorDate: _historyPage!.anchorDate,
+      );
+      if (mounted) setState(() { _historyPage = page; _historyLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() => _historyLoading = false);
+    }
+  }
+
+  Future<void> _loadNewerHistory() async {
+    final ts = _historyPage?.newestTs;
+    if (ts == null) return;
+    setState(() => _historyLoading = true);
+    try {
+      final page = await widget.historyRepo.loadNewer(
+        chatId: widget.chat.id,
+        afterTs: ts,
+        anchorDate: _historyPage!.anchorDate,
+      );
+      if (mounted) setState(() { _historyPage = page; _historyLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() => _historyLoading = false);
+    }
+  }
+
+  void _exitHistory() => setState(() { _historyMode = false; _historyPage = null; });
+
+  static String _formatAnchorDate(DateTime d) {
+    const months = [
+      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    ];
+    return '${months[d.month - 1]} ${d.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser!.uid;
@@ -308,6 +389,14 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: () => setState(() => _ephemeralMode = !_ephemeralMode),
           ),
           IconButton(
+            icon: Icon(
+              Icons.history,
+              color: _historyMode ? const Color(0xFF42A5F5) : null,
+            ),
+            tooltip: _historyMode ? 'Salir del historial' : 'Buscar por fecha',
+            onPressed: _historyMode ? _exitHistory : _pickHistoryDate,
+          ),
+          IconButton(
             icon: const Icon(Icons.qr_code_outlined),
             tooltip: 'Mi código QR de emparejamiento',
             onPressed: () => showModalBottomSheet(
@@ -337,7 +426,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(children: [
-              if (_isOffline) _buildOfflineBanner(),
+              if (_isOffline && !_historyMode) _buildOfflineBanner(),
               if (_sharedKey == null)
                 Container(
                   padding: const EdgeInsets.all(8),
@@ -345,59 +434,162 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: const Text('Error derivando clave compartida',
                       style: TextStyle(color: Colors.red), textAlign: TextAlign.center),
                 ),
-              Expanded(
-                child: StreamBuilder<List<EncryptedMessage>>(
-                  stream: widget.msgRepo.messagesStream(widget.chat.id),
-                  builder: (ctx, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final msgs = snap.data ?? [];
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-                    return ListView.builder(
-                      controller: _scrollCtrl,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: msgs.length,
-                      itemBuilder: (ctx, i) {
-                        final msg = msgs[i];
-                        final isMe = msg.senderId == myUid;
-                        return _MessageBubble(
-                          key: ValueKey(msg.id),
-                          message: msg,
-                          isMe: isMe,
-                          decryptFn: _decrypt,
-                          sharedKey: _sharedKey,
-                          crypto: widget.crypto,
-                          fileRepo: widget.fileRepo,
-                          onEphemeralSeen: msg.ephemeral && !isMe
-                              ? () => widget.msgRepo.deleteEphemeralMessage(
-                                  widget.chat.id, msg.id)
-                              : null,
-                          onCallAccepted: msg.type == MessageType.callInvite && !isMe
-                              ? (roomId, password) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => VideoCallScreen(
-                                        roomId: roomId,
-                                        password: password,
-                                        displayName: FirebaseAuth.instance.currentUser!.displayName ?? 'Usuario',
-                                        isModerator: false,
-                                        videoService: widget.videoService,
-                                        isDataSaver: _dataSaverMode,
+              if (_historyMode) ...[
+                _buildHistoryBanner(),
+                Expanded(child: _buildHistoryBody(myUid)),
+                _buildHistoryPaginationBar(),
+              ] else ...[
+                Expanded(
+                  child: StreamBuilder<List<EncryptedMessage>>(
+                    stream: widget.msgRepo.messagesStream(widget.chat.id),
+                    builder: (ctx, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final msgs = snap.data ?? [];
+                      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                      return ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        itemCount: msgs.length,
+                        itemBuilder: (ctx, i) {
+                          final msg = msgs[i];
+                          final isMe = msg.senderId == myUid;
+                          return _MessageBubble(
+                            key: ValueKey(msg.id),
+                            message: msg,
+                            isMe: isMe,
+                            decryptFn: _decrypt,
+                            sharedKey: _sharedKey,
+                            crypto: widget.crypto,
+                            fileRepo: widget.fileRepo,
+                            onEphemeralSeen: msg.ephemeral && !isMe
+                                ? () => widget.msgRepo.deleteEphemeralMessage(
+                                    widget.chat.id, msg.id)
+                                : null,
+                            onCallAccepted: msg.type == MessageType.callInvite && !isMe
+                                ? (roomId, password) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => VideoCallScreen(
+                                          roomId: roomId,
+                                          password: password,
+                                          displayName: FirebaseAuth.instance.currentUser!.displayName ?? 'Usuario',
+                                          isModerator: false,
+                                          videoService: widget.videoService,
+                                          isDataSaver: _dataSaverMode,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }
-                              : null,
-                        );
-                      },
-                    );
-                  },
+                                    );
+                                  }
+                                : null,
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
-              ),
-              _buildInputBar(),
+                _buildInputBar(),
+              ],
             ]),
+    );
+  }
+
+  // ── History UI widgets ────────────────────────────────────────────────────
+
+  Widget _buildHistoryBanner() {
+    final label = _historyPage != null
+        ? 'Historial · ${_formatAnchorDate(_historyPage!.anchorDate)}'
+        : 'Buscando historial…';
+    return Container(
+      color: const Color(0xFF1A2740),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(children: [
+        const Icon(Icons.history, size: 14, color: Color(0xFF42A5F5)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(label,
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+              overflow: TextOverflow.ellipsis),
+        ),
+        TextButton.icon(
+          icon: const Icon(Icons.close, size: 14),
+          label: const Text('Salir', style: TextStyle(fontSize: 12)),
+          onPressed: _exitHistory,
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white54,
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildHistoryBody(String myUid) {
+    if (_historyLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_historyPage == null || _historyPage!.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.search_off, size: 56, color: Colors.grey[700]),
+          const SizedBox(height: 12),
+          Text('Sin mensajes en esta fecha',
+              style: TextStyle(color: Colors.grey[500])),
+          const SizedBox(height: 8),
+          TextButton(onPressed: _pickHistoryDate, child: const Text('Elegir otra fecha')),
+        ]),
+      );
+    }
+    final msgs = _historyPage!.messages;
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      itemCount: msgs.length,
+      itemBuilder: (ctx, i) {
+        final msg = msgs[i];
+        final isMe = msg.senderId == myUid;
+        return _MessageBubble(
+          key: ValueKey('${msg.id}_hist'),
+          message: msg,
+          isMe: isMe,
+          decryptFn: _decrypt,
+          sharedKey: _sharedKey,
+          crypto: widget.crypto,
+          fileRepo: widget.fileRepo,
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryPaginationBar() {
+    if (_historyLoading || _historyPage == null) return const SizedBox.shrink();
+    final hasOlder = _historyPage!.hasOlder;
+    final hasNewer = _historyPage!.hasNewer;
+    if (!hasOlder && !hasNewer) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      color: const Color(0xFF111827),
+      child: Row(children: [
+        if (hasOlder)
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.chevron_left, size: 18),
+              label: const Text('Anteriores', style: TextStyle(fontSize: 12)),
+              onPressed: _loadOlderHistory,
+            ),
+          ),
+        if (hasOlder && hasNewer) const SizedBox(width: 8),
+        if (hasNewer)
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.chevron_right, size: 18),
+              label: const Text('Siguientes', style: TextStyle(fontSize: 12)),
+              onPressed: _loadNewerHistory,
+            ),
+          ),
+      ]),
     );
   }
 
@@ -640,10 +832,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
             )),
           ]),
           const SizedBox(height: 4),
-          const Text(
-            'Toca para ver · Sin guardar en dispositivo',
-            style: TextStyle(fontSize: 10, color: Colors.white54),
-          ),
+          if (widget.message.cloudinaryUrl != null)
+            const Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('🧊 ', style: TextStyle(fontSize: 11)),
+              Text('Almacenamiento en frío · descarga al tocar',
+                  style: TextStyle(fontSize: 10, color: Color(0xFF42A5F5))),
+            ])
+          else
+            const Text(
+              'Toca para ver · Sin guardar en dispositivo',
+              style: TextStyle(fontSize: 10, color: Colors.white54),
+            ),
         ]),
       );
     } else {

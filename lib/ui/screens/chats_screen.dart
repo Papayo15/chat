@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/chat.dart';
 import '../../repositories/chat_repository.dart';
+import '../../repositories/history_repository.dart';
 import '../../repositories/message_repository.dart';
 import '../../repositories/user_repository.dart';
 import '../../services/crypto_service.dart';
@@ -20,6 +21,7 @@ class ChatsScreen extends StatelessWidget {
   final ChatRepository chatRepo;
   final MessageRepository msgRepo;
   final UserRepository userRepo;
+  final HistoryRepository historyRepo;
   final VideoCallService videoService;
   final P2PTransferService p2pService;
   final SyncViewerService syncService;
@@ -34,6 +36,7 @@ class ChatsScreen extends StatelessWidget {
     required this.chatRepo,
     required this.msgRepo,
     required this.userRepo,
+    required this.historyRepo,
     required this.videoService,
     required this.p2pService,
     required this.syncService,
@@ -152,6 +155,7 @@ class ChatsScreen extends StatelessWidget {
                           otherUserUid: otherUid,
                           msgRepo: msgRepo,
                           userRepo: userRepo,
+                          historyRepo: historyRepo,
                           videoService: videoService,
                           p2pService: p2pService,
                           syncService: syncService,
@@ -203,6 +207,7 @@ class ChatsScreen extends StatelessWidget {
                     otherUserUid: otherUid,
                     msgRepo: msgRepo,
                     userRepo: userRepo,
+                    historyRepo: historyRepo,
                     videoService: videoService,
                     p2pService: p2pService,
                     syncService: syncService,
@@ -273,6 +278,7 @@ class ChatsScreen extends StatelessWidget {
                         otherUserUid: users.first.uid,
                         msgRepo: msgRepo,
                         userRepo: userRepo,
+                        historyRepo: historyRepo,
                         videoService: videoService,
                         p2pService: p2pService,
                         syncService: syncService,

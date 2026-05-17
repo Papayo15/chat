@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 import 'repositories/chat_repository.dart';
 import 'repositories/file_repository.dart';
+import 'repositories/history_repository.dart';
 import 'repositories/message_repository.dart';
 import 'repositories/user_repository.dart';
 import 'services/crypto_service.dart';
@@ -82,6 +83,7 @@ class SecureChatApp extends StatelessWidget {
     );
     final userRepo = UserRepository(db: db, auth: auth, crypto: crypto);
     final chatRepo = ChatRepository(db: db, auth: auth);
+    final historyRepo = HistoryRepository(db: db);
     final videoService = VideoCallService(crypto: crypto);
     final p2pService = P2PTransferService(db: db, auth: auth);
     final syncService = SyncViewerService(db: db, auth: auth);
@@ -117,6 +119,7 @@ class SecureChatApp extends StatelessWidget {
             chatRepo: chatRepo,
             msgRepo: msgRepo,
             userRepo: userRepo,
+            historyRepo: historyRepo,
             videoService: videoService,
             p2pService: p2pService,
             syncService: syncService,
