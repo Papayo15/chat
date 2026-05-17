@@ -1,3 +1,6 @@
+// ignore_for_file: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -16,15 +19,12 @@ class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   bool _loading = false;
-  String? _error;
 
-  // ── Email tab ──
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   bool _isRegister = false;
 
-  // ── Phone tab ──
   final _phoneCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
   ConfirmationResult? _confirmation;
@@ -34,7 +34,6 @@ class _AuthScreenState extends State<AuthScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    _tabs.addListener(() => setState(() => _error = null));
   }
 
   @override
@@ -48,68 +47,72 @@ class _AuthScreenState extends State<AuthScreen>
     super.dispose();
   }
 
-  void _setError(String? e) {
-    setState(() { _error = e; _loading = false; });
-    if (e != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e),
-        backgroundColor: Colors.red[800],
-        duration: const Duration(seconds: 6),
-        behavior: SnackBarBehavior.floating,
-      ));
+  // Shows error in an AlertDialog — impossible to miss regardless of scroll.
+  void _showError(String msg) {
+    setState(() => _loading = false);
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        icon: const Icon(Icons.error_outline, color: Colors.red, size: 36),
+        title: const Text('Error de autenticación'),
+        content: Text(msg, style: const TextStyle(fontSize: 14)),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _friendly(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'user-not-found':        return 'No existe una cuenta con ese email.';
+      case 'wrong-password':        return 'Contraseña incorrecta.';
+      case 'email-already-in-use':  return 'Ese email ya está registrado.';
+      case 'weak-password':         return 'La contraseña debe tener al menos 6 caracteres.';
+      case 'invalid-email':         return 'Email con formato inválido.';
+      case 'invalid-phone-number':  return 'Número inválido. Usa formato E.164: +521234567890';
+      case 'too-many-requests':     return 'Demasiados intentos. Espera unos minutos.';
+      case 'operation-not-allowed': return 'Este método de login no está habilitado en Firebase.\n\nVe a Firebase Console → Authentication → Sign-in method y actívalo.';
+      case 'unauthorized-domain':   return 'El dominio no está autorizado en Firebase.\n\nVe a Firebase Console → Authentication → Settings → Authorized domains y agrega: ${html.window.location.hostname}';
+      default:
+        return '${e.code}: ${e.message ?? "sin detalle"}';
     }
   }
 
-  String _friendlyError(String code) {
-    switch (code) {
-      case 'user-not-found': return 'Usuario no encontrado';
-      case 'wrong-password': return 'Contraseña incorrecta';
-      case 'email-already-in-use': return 'El email ya está registrado';
-      case 'weak-password': return 'La contraseña debe tener al menos 6 caracteres';
-      case 'invalid-email': return 'Email inválido';
-      case 'invalid-verification-code': return 'Código OTP incorrecto';
-      case 'invalid-phone-number': return 'Número de teléfono inválido (usa formato E.164)';
-      case 'too-many-requests': return 'Demasiados intentos. Intenta más tarde.';
-      default: return 'Error de autenticación: $code';
+  // ── Email ────────────────────────────────────────────────────────────────
+
+  Future<void> _emailAction() async {
+    final email = _emailCtrl.text.trim();
+    final pass  = _passCtrl.text;
+    final name  = _nameCtrl.text.trim();
+
+    if (email.isEmpty || pass.isEmpty) {
+      _showError('Completa email y contraseña.'); return;
     }
-  }
+    if (_isRegister && name.isEmpty) {
+      _showError('Ingresa tu nombre.'); return;
+    }
 
-  // ── Email ─────────────────────────────────────────────────────────────────
-
-  Future<void> _emailSignIn() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() => _loading = true);
     try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text,
-      );
+      UserCredential cred;
+      if (_isRegister) {
+        cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email, password: pass);
+        await cred.user!.updateDisplayName(name);
+      } else {
+        cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email, password: pass);
+      }
       await widget.userRepo.registerOrLogin(cred.user!);
     } on FirebaseAuthException catch (e) {
-      _setError(_friendlyError(e.code));
+      _showError(_friendly(e));
     } catch (e) {
-      _setError(e.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _emailRegister() async {
-    if (_nameCtrl.text.trim().isEmpty) {
-      _setError('Ingresa tu nombre');
-      return;
-    }
-    setState(() { _loading = true; _error = null; });
-    try {
-      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text,
-      );
-      await cred.user!.updateDisplayName(_nameCtrl.text.trim());
-      await widget.userRepo.registerOrLogin(cred.user!);
-    } on FirebaseAuthException catch (e) {
-      _setError(_friendlyError(e.code));
-    } catch (e) {
-      _setError(e.toString());
+      _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -120,10 +123,9 @@ class _AuthScreenState extends State<AuthScreen>
   Future<void> _sendOtp() async {
     final phone = _phoneCtrl.text.trim();
     if (phone.isEmpty) {
-      _setError('Ingresa un número en formato E.164 (ejemplo: +521234567890)');
-      return;
+      _showError('Ingresa el número en formato E.164.\nEjemplo: +521234567890'); return;
     }
-    setState(() { _loading = true; _error = null; });
+    setState(() => _loading = true);
     try {
       final svc = IdentityService();
       _confirmation = await svc.sendPhoneOtp(
@@ -132,27 +134,27 @@ class _AuthScreenState extends State<AuthScreen>
       );
       if (mounted) setState(() { _otpSent = true; _loading = false; });
     } on FirebaseAuthException catch (e) {
-      _setError(_friendlyError(e.code));
+      _showError(_friendly(e));
     } catch (e) {
-      _setError(e.toString());
+      _showError(e.toString());
     }
   }
 
   Future<void> _confirmOtp() async {
     if (_confirmation == null) return;
-    setState(() { _loading = true; _error = null; });
+    final code = _otpCtrl.text.trim();
+    if (code.length != 6) { _showError('El código OTP debe tener 6 dígitos.'); return; }
+    setState(() => _loading = true);
     try {
-      final svc = IdentityService();
+      final svc  = IdentityService();
       final user = await svc.confirmPhoneOtp(
-        confirmationResult: _confirmation!,
-        smsCode: _otpCtrl.text.trim(),
-      );
-      final phoneHash = IdentityService.hashPhone(_phoneCtrl.text.trim());
-      await widget.userRepo.registerOrLogin(user, phoneHash: phoneHash);
+        confirmationResult: _confirmation!, smsCode: code);
+      final hash = IdentityService.hashPhone(_phoneCtrl.text.trim());
+      await widget.userRepo.registerOrLogin(user, phoneHash: hash);
     } on FirebaseAuthException catch (e) {
-      _setError(_friendlyError(e.code));
+      _showError(_friendly(e));
     } catch (e) {
-      _setError(e.toString());
+      _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -161,21 +163,21 @@ class _AuthScreenState extends State<AuthScreen>
   // ── Anonymous ─────────────────────────────────────────────────────────────
 
   Future<void> _signInAnonymously() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() => _loading = true);
     try {
-      final svc = IdentityService();
+      final svc  = IdentityService();
       final user = await svc.signInAnonymously();
       await widget.userRepo.registerOrLogin(user);
     } on FirebaseAuthException catch (e) {
-      _setError(_friendlyError(e.code));
+      _showError(_friendly(e));
     } catch (e) {
-      _setError(e.toString());
+      _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ── UI ────────────────────────────────────────────────────────────────────
+  // ── UI ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -184,67 +186,38 @@ class _AuthScreenState extends State<AuthScreen>
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.lock_outline, size: 72,
-                    color: Color(0xFF1565C0)),
-                const SizedBox(height: 16),
+                const Icon(Icons.lock_outline, size: 72, color: Color(0xFF1565C0)),
+                const SizedBox(height: 12),
                 const Text('SecureChat',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1)),
+                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                const Text('Identidad Híbrida · Privacidad Radical',
+                const Text('Privacidad Radical · Cifrado E2EE',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 24),
-
-                // Error banner — shown at top so it's always visible
-                if (_error != null)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withAlpha(30),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.red.withAlpha(80)),
-                    ),
-                    child: Row(children: [
-                      const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(_error!,
-                          style: const TextStyle(color: Colors.redAccent, fontSize: 13))),
-                      IconButton(
-                        icon: const Icon(Icons.close, size: 16, color: Colors.redAccent),
-                        onPressed: () => setState(() => _error = null),
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                      ),
-                    ]),
-                  ),
+                const SizedBox(height: 32),
 
                 // Invisible reCAPTCHA anchor for Firebase Phone Auth
-                const SizedBox(
-                    key: ValueKey('recaptcha-container'), height: 0),
+                const SizedBox(key: ValueKey('recaptcha-container'), height: 0),
 
                 TabBar(
                   controller: _tabs,
                   labelStyle: const TextStyle(fontSize: 11),
                   tabs: const [
-                    Tab(icon: Icon(Icons.email_outlined), text: 'Email'),
-                    Tab(icon: Icon(Icons.phone_outlined), text: 'SMS OTP'),
+                    Tab(icon: Icon(Icons.email_outlined),  text: 'Email'),
+                    Tab(icon: Icon(Icons.phone_outlined),  text: 'SMS OTP'),
                     Tab(icon: Icon(Icons.shield_outlined), text: 'Anónimo'),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
 
                 SizedBox(
-                  height: 280,
+                  height: 310,
                   child: TabBarView(
                     controller: _tabs,
                     children: [
@@ -255,14 +228,13 @@ class _AuthScreenState extends State<AuthScreen>
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 Row(children: [
                   Expanded(child: Divider(color: Colors.grey[800])),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('Cifrado E2EE',
-                        style: TextStyle(
-                            color: Colors.grey[600], fontSize: 11)),
+                    child: Text('Los errores se muestran en un diálogo',
+                        style: TextStyle(color: Colors.grey[700], fontSize: 10)),
                   ),
                   Expanded(child: Divider(color: Colors.grey[800])),
                 ]),
@@ -275,164 +247,150 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Widget _buildEmailTab() {
-    return Column(
-      children: [
-        if (_isRegister) ...[
-          TextField(
-            controller: _nameCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Nombre completo',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.person_outline),
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
+    return Column(children: [
+      if (_isRegister) ...[
         TextField(
-          controller: _emailCtrl,
+          controller: _nameCtrl,
           decoration: const InputDecoration(
-            labelText: 'Email',
+            labelText: 'Nombre',
             border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.email_outlined),
+            prefixIcon: Icon(Icons.person_outline),
           ),
-          keyboardType: TextInputType.emailAddress,
-          autofillHints: const [AutofillHints.email],
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _passCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Contraseña',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.lock_outlined),
-          ),
-          obscureText: true,
-          autofillHints: const [AutofillHints.password],
-          onSubmitted: (_) => _isRegister ? _emailRegister() : _emailSignIn(),
-        ),
-        const SizedBox(height: 16),
-        if (_loading)
-          const Center(child: CircularProgressIndicator())
-        else ...[
-          FilledButton.icon(
-            onPressed: _isRegister ? _emailRegister : _emailSignIn,
-            icon: Icon(_isRegister
-                ? Icons.person_add_outlined
-                : Icons.login),
-            label: Text(_isRegister ? 'Crear cuenta' : 'Iniciar sesión'),
-          ),
-          TextButton(
-            onPressed: () =>
-                setState(() { _isRegister = !_isRegister; _error = null; }),
-            child: Text(_isRegister
-                ? '¿Ya tienes cuenta? Inicia sesión'
-                : '¿No tienes cuenta? Regístrate'),
-          ),
-        ],
       ],
-    );
+      TextField(
+        controller: _emailCtrl,
+        decoration: const InputDecoration(
+          labelText: 'Email',
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.email_outlined),
+        ),
+        keyboardType: TextInputType.emailAddress,
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _passCtrl,
+        decoration: const InputDecoration(
+          labelText: 'Contraseña (mín. 6 caracteres)',
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.lock_outlined),
+        ),
+        obscureText: true,
+        onSubmitted: (_) => _emailAction(),
+      ),
+      const SizedBox(height: 16),
+      _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              FilledButton.icon(
+                onPressed: _emailAction,
+                icon: Icon(_isRegister ? Icons.person_add_outlined : Icons.login),
+                label: Text(_isRegister ? 'Crear cuenta' : 'Iniciar sesión'),
+              ),
+              TextButton(
+                onPressed: () => setState(() {
+                  _isRegister = !_isRegister;
+                }),
+                child: Text(_isRegister
+                    ? '¿Ya tienes cuenta? Iniciar sesión'
+                    : '¿No tienes cuenta? Registrarse'),
+              ),
+            ]),
+    ]);
   }
 
   Widget _buildPhoneTab() {
     if (!_otpSent) {
-      return Column(
-        children: [
-          TextField(
-            controller: _phoneCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Número E.164 (+521234567890)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.phone_outlined),
-            ),
-            keyboardType: TextInputType.phone,
+      return Column(children: [
+        TextField(
+          controller: _phoneCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Número con código de país',
+            hintText: '+521234567890',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.phone_outlined),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'El número se hashea con SHA-256 antes de guardarse.\nEl número real nunca se almacena.',
-            style: TextStyle(fontSize: 11, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else
-            FilledButton.icon(
-              icon: const Icon(Icons.send),
-              label: const Text('Enviar código SMS'),
-              onPressed: _sendOtp,
-            ),
-        ],
-      );
+          keyboardType: TextInputType.phone,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Formato E.164: + código país + número\nMéxico: +52 · USA: +1 · España: +34',
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 14),
+        _loading
+            ? const Center(child: CircularProgressIndicator())
+            : FilledButton.icon(
+                onPressed: _sendOtp,
+                icon: const Icon(Icons.send),
+                label: const Text('Enviar código SMS'),
+              ),
+      ]);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Código enviado a ${_phoneCtrl.text}',
-            style: const TextStyle(fontSize: 13),
-            textAlign: TextAlign.center),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _otpCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Código OTP de 6 dígitos',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.dialpad),
-          ),
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-          onSubmitted: (_) => _confirmOtp(),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('Código enviado a ${_phoneCtrl.text}',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: Colors.grey[400])),
+      const SizedBox(height: 14),
+      TextField(
+        controller: _otpCtrl,
+        decoration: const InputDecoration(
+          labelText: 'Código de 6 dígitos',
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.dialpad),
         ),
-        const SizedBox(height: 4),
-        if (_loading)
-          const Center(child: CircularProgressIndicator())
-        else
-          Row(children: [
-            TextButton(
-              onPressed: () =>
-                  setState(() { _otpSent = false; _confirmation = null; }),
-              child: const Text('Cambiar número'),
-            ),
-            const Spacer(),
-            FilledButton(
-              onPressed: _confirmOtp,
-              child: const Text('Verificar'),
-            ),
-          ]),
-      ],
-    );
+        keyboardType: TextInputType.number,
+        maxLength: 6,
+        onSubmitted: (_) => _confirmOtp(),
+      ),
+      const SizedBox(height: 4),
+      _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Row(children: [
+              TextButton(
+                onPressed: () =>
+                    setState(() { _otpSent = false; _confirmation = null; }),
+                child: const Text('Cambiar número'),
+              ),
+              const Spacer(),
+              FilledButton(
+                onPressed: _confirmOtp,
+                child: const Text('Verificar'),
+              ),
+            ]),
+    ]);
   }
 
   Widget _buildAnonTab() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.shield_outlined, size: 48,
-            color: Color(0xFF42A5F5)),
-        const SizedBox(height: 12),
-        const Text(
-          'Entra sin revelar ningún dato personal.\nSe genera un ID criptográfico único en este dispositivo.',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13),
-        ),
-        const SizedBox(height: 16),
-        if (_loading)
-          const Center(child: CircularProgressIndicator())
-        else
-          FilledButton.icon(
-            icon: const Icon(Icons.shield),
-            label: const Text('Entrar de forma anónima'),
-            style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF1B5E20)),
-            onPressed: _signInAnonymously,
-          ),
-        const SizedBox(height: 8),
-        const Text(
-          'Tu clave E2EE se guarda solo en este navegador.',
-          style: TextStyle(fontSize: 11, color: Colors.grey),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
+    return Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      const Icon(Icons.shield_outlined, size: 56, color: Color(0xFF42A5F5)),
+      const SizedBox(height: 14),
+      const Text(
+        'Entra sin email ni teléfono.\nSe genera un ID criptográfico único\nvinculado solo a este navegador.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 13, height: 1.5),
+      ),
+      const SizedBox(height: 20),
+      _loading
+          ? const Center(child: CircularProgressIndicator())
+          : FilledButton.icon(
+              onPressed: _signInAnonymously,
+              icon: const Icon(Icons.shield),
+              label: const Text('Entrar de forma anónima'),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF1B5E20),
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+      const SizedBox(height: 10),
+      Text(
+        'Tu clave E2EE se guarda solo en este navegador.',
+        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+        textAlign: TextAlign.center,
+      ),
+    ]);
   }
 }
