@@ -13,6 +13,7 @@ import '../../models/chat.dart';
 import '../../models/encrypted_message.dart';
 import '../../repositories/file_repository.dart';
 import '../../repositories/message_repository.dart';
+import '../../services/cloudinary_service.dart';
 import '../../repositories/user_repository.dart';
 import '../../services/crypto_service.dart';
 import '../../services/data_saving_service.dart';
@@ -518,35 +519,40 @@ class _MessageBubbleState extends State<_MessageBubble> {
     }
   }
 
-  /// Decodes the encrypted file from the Firestore message (base64 → decrypt → blob URL).
-  /// Zero-footprint: bytes stay in RAM only while rendering, then GC collects them.
+  /// Decrypts and opens the file. Handles both Firestore base64 (≤500KB) and
+  /// Cloudinary (>500KB). Zero-footprint: decrypted bytes stay in RAM only.
   Future<void> _openFile() async {
-    if (widget.message.fileData == null ||
-        widget.message.encryptedFileKey == null ||
-        widget.sharedKey == null) return;
+    final hasFile = widget.message.fileData != null || widget.message.cloudinaryUrl != null;
+    if (!hasFile || widget.message.encryptedFileKey == null || widget.sharedKey == null) return;
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => const AlertDialog(
+      builder: (_) => AlertDialog(
         content: Row(mainAxisSize: MainAxisSize.min, children: [
-          CircularProgressIndicator(),
-          SizedBox(width: 16),
-          Text('Descifrando archivo...'),
+          const CircularProgressIndicator(),
+          const SizedBox(width: 16),
+          Text(widget.message.cloudinaryUrl != null
+              ? 'Descargando y descifrando...'
+              : 'Descifrando archivo...'),
         ]),
       ),
     );
 
     try {
-      final encryptedBytes = base64.decode(widget.message.fileData!);
+      final Uint8List encryptedBytes;
+      if (widget.message.fileData != null) {
+        encryptedBytes = base64.decode(widget.message.fileData!);
+      } else {
+        encryptedBytes = await CloudinaryService()
+            .downloadEncryptedFile(widget.message.cloudinaryUrl!);
+      }
+
       final fileKey = await widget.crypto.decryptFileKey(
         widget.message.encryptedFileKey!,
         widget.sharedKey!,
       );
-      final decryptedBytes = await widget.crypto.decryptFile(
-        Uint8List.fromList(encryptedBytes),
-        fileKey,
-      );
+      final decryptedBytes = await widget.crypto.decryptFile(encryptedBytes, fileKey);
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -605,8 +611,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
         const SizedBox(width: 6),
         Flexible(child: Text(_decrypted!, style: const TextStyle(color: Colors.white))),
       ]);
-    } else if (widget.message.fileData != null) {
-      // File message — tap to stream-decrypt and open (Zero-Footprint)
+    } else if (widget.message.fileData != null || widget.message.cloudinaryUrl != null) {
+      // File message — tap to download, decrypt, and open (Zero-Footprint)
       content = InkWell(
         onTap: _openFile,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [

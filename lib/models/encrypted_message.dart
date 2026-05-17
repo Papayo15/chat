@@ -32,7 +32,8 @@ class EncryptedMessage {
   final String senderId;
   final EncryptedPayload payload;
   final MessageType type;
-  final String? fileData;       // base64 encrypted file bytes stored in Firestore
+  final String? fileData;        // base64 encrypted bytes (files ≤ 500 KB, stored in Firestore)
+  final String? cloudinaryUrl;  // Cloudinary URL for encrypted files > 500 KB
   final String? fileName;       // original filename
   final EncryptedPayload? encryptedFileKey;
   final bool ephemeral;
@@ -46,6 +47,7 @@ class EncryptedMessage {
     required this.payload,
     required this.type,
     this.fileData,
+    this.cloudinaryUrl,
     this.fileName,
     this.encryptedFileKey,
     required this.ephemeral,
@@ -63,6 +65,7 @@ class EncryptedMessage {
       'timestamp': Timestamp.fromDate(timestamp),
     };
     if (fileData != null) map['fileData'] = fileData;
+    if (cloudinaryUrl != null) map['cloudinaryUrl'] = cloudinaryUrl;
     if (fileName != null) map['fileName'] = fileName;
     if (encryptedFileKey != null) map['encryptedFileKey'] = encryptedFileKey!.toMap();
     return map;
@@ -80,6 +83,7 @@ class EncryptedMessage {
         orElse: () => MessageType.text,
       ),
       fileData: data['fileData'] as String?,
+      cloudinaryUrl: data['cloudinaryUrl'] as String?,
       fileName: data['fileName'] as String?,
       encryptedFileKey: data['encryptedFileKey'] != null
           ? EncryptedPayload.fromMap(data['encryptedFileKey'] as Map<String, dynamic>)

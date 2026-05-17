@@ -6,12 +6,13 @@ import 'package:cryptography/cryptography.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/encrypted_message.dart';
+import '../services/cloudinary_service.dart';
 import '../services/crypto_service.dart';
 import '../services/data_saving_service.dart';
 import '../services/offline_service.dart';
 
-// Max file size: 500KB before encryption (~667KB base64 → fits in Firestore 1MB doc)
-const int _maxFileSizeBytes = 524288;
+// Files ≤ 500 KB go into Firestore as base64. Larger files go to Cloudinary.
+const int _firestoreMaxBytes = 524288;
 
 class MessageRepository {
   final FirebaseFirestore _db;
@@ -19,6 +20,7 @@ class MessageRepository {
   final CryptoService _crypto;
   final DataSavingService _dataSaving;
   final OfflineService _offline;
+  final CloudinaryService _cloudinary = CloudinaryService();
 
   MessageRepository({
     required FirebaseFirestore db,
@@ -68,9 +70,10 @@ class MessageRepository {
     }
   }
 
-  /// Encrypt file and store it as base64 directly in the Firestore message document.
-  /// No Firebase Storage needed — completely free.
-  /// Limit: 500KB before encryption. Files above that must use P2P transfer.
+  /// Encrypt and send a file.
+  /// • Files ≤ 500 KB → stored as base64 in Firestore (free, instant).
+  /// • Files > 500 KB → uploaded to Cloudinary (free, up to 25 GB/month).
+  /// All files are AES-256-GCM encrypted before leaving the device.
   Future<void> sendFileMessage({
     required String chatId,
     required Uint8List fileBytes,
@@ -83,17 +86,10 @@ class MessageRepository {
   }) async {
     final uid = _auth.currentUser!.uid;
 
-    // Compress images before size check
+    // Compress images adaptively
     Uint8List processedBytes = fileBytes;
     if (type == MessageType.image) {
       processedBytes = await _dataSaving.compressImageAdaptive(fileBytes);
-    }
-
-    if (processedBytes.length > _maxFileSizeBytes) {
-      throw Exception(
-        'Archivo demasiado grande (${(processedBytes.length / 1024).round()} KB). '
-        'Máximo 500 KB. Para archivos grandes usa la transferencia P2P.',
-      );
     }
 
     // Encrypt in memory
@@ -105,8 +101,22 @@ class MessageRepository {
       sharedKey,
     );
 
-    // Store encrypted file as base64 directly in Firestore document
-    final fileDataB64 = base64.encode(encryptedBytes);
+    String? fileDataB64;
+    String? cloudinaryUrl;
+    final fileId = '${chatId}_${DateTime.now().millisecondsSinceEpoch}';
+
+    if (processedBytes.length <= _firestoreMaxBytes) {
+      // Small file — store as base64 in Firestore document
+      fileDataB64 = base64.encode(encryptedBytes);
+    } else {
+      // Large file — upload encrypted bytes to Cloudinary
+      if (isOffline) {
+        throw Exception(
+          'Sin conexión. Los archivos grandes requieren internet para enviarse.',
+        );
+      }
+      cloudinaryUrl = await _cloudinary.uploadEncryptedFile(encryptedBytes, fileId);
+    }
 
     final msg = EncryptedMessage(
       id: '',
@@ -115,6 +125,7 @@ class MessageRepository {
       payload: payloadEncrypted,
       type: type,
       fileData: fileDataB64,
+      cloudinaryUrl: cloudinaryUrl,
       fileName: originalFileName,
       encryptedFileKey: encryptedFileKey,
       ephemeral: ephemeral,
