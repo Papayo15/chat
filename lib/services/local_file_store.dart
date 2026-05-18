@@ -16,39 +16,53 @@ class LocalFileStore {
   static const _downloadQueueKey = 'sc_file_download_queue';
 
   Future<void> init() async {
-    _db = await html.window.indexedDB!.open(
-      _dbName,
-      version: 1,
-      onUpgradeNeeded: (e) {
-        final db = e.target.result as dynamic;
-        if (!db.objectStoreNames!.contains(_filesStore)) {
-          db.createObjectStore(_filesStore);
-        }
-      },
-    );
+    try {
+      if (html.window.indexedDB == null) return;
+      _db = await html.window.indexedDB!.open(
+        _dbName,
+        version: 1,
+        onUpgradeNeeded: (e) {
+          final db = e.target.result as dynamic;
+          if (!db.objectStoreNames!.contains(_filesStore)) {
+            db.createObjectStore(_filesStore);
+          }
+        },
+      );
+    } catch (_) {
+      _db = null; // Safari Private mode blocks IndexedDB — degrade gracefully
+    }
   }
 
   /// Save encrypted file bytes locally (before upload).
   Future<void> storeFile(String fileId, Uint8List encryptedBytes) async {
-    final txn = _db!.transaction(_filesStore, 'readwrite');
-    await txn.objectStore(_filesStore).put(encryptedBytes.buffer, fileId);
-    await txn.completed;
+    if (_db == null) return;
+    try {
+      final txn = _db!.transaction(_filesStore, 'readwrite');
+      await txn.objectStore(_filesStore).put(encryptedBytes.buffer, fileId);
+      await txn.completed;
+    } catch (_) {}
   }
 
   /// Read encrypted file bytes from local storage.
   Future<Uint8List?> readFile(String fileId) async {
-    final txn = _db!.transaction(_filesStore, 'readonly');
-    final result = await txn.objectStore(_filesStore).getObject(fileId);
-    await txn.completed;
-    if (result == null) return null;
-    return Uint8List.view(result as ByteBuffer);
+    if (_db == null) return null;
+    try {
+      final txn = _db!.transaction(_filesStore, 'readonly');
+      final result = await txn.objectStore(_filesStore).getObject(fileId);
+      await txn.completed;
+      if (result == null) return null;
+      return Uint8List.view(result as ByteBuffer);
+    } catch (_) { return null; }
   }
 
   /// Delete a file after successful upload.
   Future<void> deleteFile(String fileId) async {
-    final txn = _db!.transaction(_filesStore, 'readwrite');
-    await txn.objectStore(_filesStore).delete(fileId);
-    await txn.completed;
+    if (_db == null) return;
+    try {
+      final txn = _db!.transaction(_filesStore, 'readwrite');
+      await txn.objectStore(_filesStore).delete(fileId);
+      await txn.completed;
+    } catch (_) {}
   }
 
   // ─── Upload queue (sender side) ───────────────────────────────────────────

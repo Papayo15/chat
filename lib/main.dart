@@ -25,26 +25,26 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Offline persistence disabled — Firestore's IndexedDB cache causes
-  // unhandled promise rejections in Safari/WebKit that freeze Dart's async loop.
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: false,
-  );
+  // Disable Firestore offline persistence — its IndexedDB usage causes
+  // unhandled promise rejections in Safari that freeze Dart's async loop.
+  try {
+    FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
+  } catch (_) {}
 
   final crypto = CryptoService();
-  await crypto.init();
+  try { await crypto.init(); } catch (_) {}
 
+  // LocalFileStore uses IndexedDB; in Safari Private mode IndexedDB is
+  // completely blocked and init() throws. Catch and continue — the app
+  // works without local file caching.
   final localFiles = LocalFileStore();
-  await localFiles.init();
+  try { await localFiles.init(); } catch (_) {}
 
-  final offline = OfflineService(
-    db: FirebaseFirestore.instance,
-    crypto: crypto,
-  );
-  offline.startListening();
+  final offline = OfflineService(db: FirebaseFirestore.instance, crypto: crypto);
+  try { offline.startListening(); } catch (_) {}
 
   final smsService = SmsFallbackService(crypto: crypto, fileStore: localFiles);
-  smsService.startMonitoring();
+  try { smsService.startMonitoring(); } catch (_) {}
 
   runApp(SecureChatApp(
     crypto: crypto,
