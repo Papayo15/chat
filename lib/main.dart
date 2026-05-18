@@ -23,35 +23,82 @@ import 'ui/screens/chats_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Show UI immediately — never block runApp() on service init.
+  // Firebase.initializeApp() itself is the only required async step.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Disable Firestore offline persistence — its IndexedDB usage causes
-  // unhandled promise rejections in Safari that freeze Dart's async loop.
-  try {
-    FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: false);
-  } catch (_) {}
+  runApp(const _AppBootstrap());
+}
 
-  final crypto = CryptoService();
-  try { await crypto.init(); } catch (_) {}
+/// Thin bootstrap widget that initializes all services in initState() so
+/// Flutter's rendering pipeline starts immediately after Firebase init.
+/// No service failure can prevent the UI from appearing.
+class _AppBootstrap extends StatefulWidget {
+  const _AppBootstrap();
 
-  // LocalFileStore uses IndexedDB; in Safari Private mode IndexedDB is
-  // completely blocked and init() throws. Catch and continue — the app
-  // works without local file caching.
-  final localFiles = LocalFileStore();
-  try { await localFiles.init(); } catch (_) {}
+  @override
+  State<_AppBootstrap> createState() => _AppBootstrapState();
+}
 
-  final offline = OfflineService(db: FirebaseFirestore.instance, crypto: crypto);
-  try { offline.startListening(); } catch (_) {}
+class _AppBootstrapState extends State<_AppBootstrap> {
+  bool _ready = false;
+  late CryptoService _crypto;
+  late OfflineService _offline;
+  late SmsFallbackService _smsService;
+  late LocalFileStore _localFiles;
 
-  final smsService = SmsFallbackService(crypto: crypto, fileStore: localFiles);
-  try { smsService.startMonitoring(); } catch (_) {}
+  @override
+  void initState() {
+    super.initState();
+    _initServices();
+  }
 
-  runApp(SecureChatApp(
-    crypto: crypto,
-    offline: offline,
-    smsService: smsService,
-    localFiles: localFiles,
-  ));
+  Future<void> _initServices() async {
+    _crypto = CryptoService();
+    try { await _crypto.init(); } catch (_) {}
+
+    // Disable Firestore offline persistence — IndexedDB in Safari triggers
+    // unhandled promise rejections that freeze Dart's async event loop.
+    try {
+      FirebaseFirestore.instance.settings =
+          const Settings(persistenceEnabled: false);
+    } catch (_) {}
+
+    // LocalFileStore uses IndexedDB. Safari Private mode may never resolve
+    // the open() call, so we timeout after 3 s and degrade gracefully.
+    _localFiles = LocalFileStore();
+    try {
+      await _localFiles.init().timeout(const Duration(seconds: 3));
+    } catch (_) {}
+
+    _offline = OfflineService(
+        db: FirebaseFirestore.instance, crypto: _crypto);
+    try { _offline.startListening(); } catch (_) {}
+
+    _smsService = SmsFallbackService(crypto: _crypto, fileStore: _localFiles);
+    try { _smsService.startMonitoring(); } catch (_) {}
+
+    if (mounted) setState(() => _ready = true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) {
+      return const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: Color(0xFF0d0d0d),
+          body: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+    return SecureChatApp(
+      crypto: _crypto,
+      offline: _offline,
+      smsService: _smsService,
+      localFiles: _localFiles,
+    );
+  }
 }
 
 class SecureChatApp extends StatelessWidget {
