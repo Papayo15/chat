@@ -76,6 +76,28 @@
   </div>
 
   <script>
+    // ── Suppress Firebase/Safari IndexedDB unhandled rejections ──────────────
+    // Firebase SDK internally uses IndexedDB for installation IDs.
+    // In Safari (especially Private mode), these operations throw AbortError /
+    // UnknownError that become unhandled promise rejections and freeze Dart's
+    // async event loop, making ALL button taps appear unresponsive.
+    window.addEventListener('unhandledrejection', function(event) {
+      var reason = event.reason;
+      if (!reason) return;
+      var name = reason.name || '';
+      var msg  = (reason.message || '') + (reason.code || '');
+      // Absorb Firebase IndexedDB failures silently — auth still works without them
+      if (name === 'AbortError' || name === 'UnknownError' ||
+          msg.indexOf('idb') !== -1 || msg.indexOf('IndexedDB') !== -1 ||
+          msg.indexOf('object store') !== -1) {
+        event.preventDefault();
+        console.warn('[SecureChat] Firebase IndexedDB error suppressed (Safari workaround):', name, msg);
+        return;
+      }
+    });
+  </script>
+
+  <script>
     // Bloquear atajos de captura de pantalla en teclado
     document.addEventListener('keyup', function(e) {
       if (e.key === 'PrintScreen') {
