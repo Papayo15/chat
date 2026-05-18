@@ -34,7 +34,6 @@
       user-select: none;
       -webkit-touch-callout: none;
     }
-    /* Dificulta captura de pantalla con marca de agua visual invisible */
     body::after {
       content: '';
       position: fixed;
@@ -58,10 +57,29 @@
       background: #0d0d0d;
       flex-direction: column;
       gap: 16px;
+      z-index: 9998;
     }
     #loading svg { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loading p { color: #90a4ae; font-family: sans-serif; font-size: 14px; }
+    #loading-title { color: #90a4ae; font-family: sans-serif; font-size: 14px; }
+    #loading-step {
+      color: #546e7a;
+      font-family: monospace;
+      font-size: 11px;
+      max-width: 320px;
+      text-align: center;
+    }
+    #loading-error {
+      display: none;
+      color: #ef5350;
+      font-family: monospace;
+      font-size: 11px;
+      max-width: 320px;
+      text-align: center;
+      padding: 8px 12px;
+      border: 1px solid #ef5350;
+      border-radius: 6px;
+    }
   </style>
 </head>
 <body>
@@ -72,23 +90,31 @@
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="12" r="10" stroke="#1565C0" stroke-width="2" stroke-dasharray="31.4" stroke-dashoffset="10"/>
     </svg>
-    <p>SecureChat</p>
+    <p id="loading-title">SecureChat</p>
+    <p id="loading-step">Iniciando…</p>
+    <p id="loading-error"></p>
   </div>
 
   <script>
+    // ── Step tracker visible on screen ────────────────────────────────────────
+    function step(msg) {
+      var el = document.getElementById('loading-step');
+      if (el) el.textContent = msg;
+    }
+    function showError(msg) {
+      var e = document.getElementById('loading-error');
+      if (e) { e.style.display = 'block'; e.textContent = msg; }
+      step('Error — ver mensaje arriba');
+    }
+
+    step('Cargando motor Flutter…');
+
     // ── Suppress Firebase/Safari IndexedDB unhandled rejections ──────────────
-    // Firebase SDK internally uses IndexedDB for installation IDs.
-    // In Safari (especially Private mode), these operations throw AbortError /
-    // UnknownError that become unhandled promise rejections and freeze Dart's
-    // async event loop, making ALL button taps appear unresponsive.
     window.addEventListener('unhandledrejection', function(event) {
       var reason = event.reason;
       if (!reason) return;
       var name = reason.name || '';
       var msg  = (reason.message || '') + (reason.code || '');
-      // Absorb Firebase IndexedDB / Installations failures silently.
-      // Firebase uses IndexedDB for Installation IDs; in Safari these fail but
-      // Auth still works. These unhandled rejections must not reach Dart.
       if (name === 'AbortError' || name === 'UnknownError' ||
           msg.indexOf('idb') !== -1 || msg.indexOf('IndexedDB') !== -1 ||
           msg.indexOf('object store') !== -1 ||
@@ -96,22 +122,25 @@
           msg.indexOf('log poling timeout') !== -1 ||
           msg.indexOf('app/idb') !== -1) {
         event.preventDefault();
-        console.warn('[SecureChat] Firebase internal error suppressed:', name, msg);
         return;
       }
+      // Show unexpected JS errors on screen
+      showError('[JS] ' + name + ': ' + msg.substring(0, 120));
+    });
+
+    window.addEventListener('error', function(event) {
+      if (event.filename && event.filename.indexOf('external_api') !== -1) return;
+      showError('[JS error] ' + (event.message || '').substring(0, 120));
     });
   </script>
 
   <script>
-    // Bloquear atajos de captura de pantalla en teclado
     document.addEventListener('keyup', function(e) {
       if (e.key === 'PrintScreen') {
         navigator.clipboard.writeText('').catch(() => {});
       }
     });
-    // Bloquear menú contextual
     document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
-    // Bloquear combinaciones de teclado comunes de captura
     document.addEventListener('keydown', function(e) {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'S' || e.key === '4' || e.key === '3')) {
         e.preventDefault();
@@ -122,13 +151,25 @@
   <!-- Jitsi Meet IFrame API - carga diferida para no bloquear Flutter -->
   <script src="https://meet.jit.si/external_api.js" async></script>
 
+  <script>
+    step('Cargando bootstrap…');
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 
   <script>
     window.addEventListener('flutter-first-frame', function() {
+      step('Flutter listo — ocultando loader');
       var loading = document.getElementById('loading');
       if (loading) loading.style.display = 'none';
     });
+
+    // If Flutter never fires flutter-first-frame within 30s, show an error.
+    setTimeout(function() {
+      var loading = document.getElementById('loading');
+      if (loading && loading.style.display !== 'none') {
+        showError('Flutter no respondió en 30s. Verifica la conexión o intenta en modo normal (no privado).');
+      }
+    }, 30000);
   </script>
 </body>
 </html>

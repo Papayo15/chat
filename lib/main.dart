@@ -23,9 +23,20 @@ import 'ui/screens/chats_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Catch all Flutter widget-tree errors and show them on screen in release mode.
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+  };
+
   // Show UI immediately — never block runApp() on service init.
   // Firebase.initializeApp() itself is the only required async step.
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
+  } catch (e) {
+    runApp(_ErrorApp('Firebase init failed: $e'));
+    return;
+  }
 
   runApp(const _AppBootstrap());
 }
@@ -54,29 +65,37 @@ class _AppBootstrapState extends State<_AppBootstrap> {
   }
 
   Future<void> _initServices() async {
-    _crypto = CryptoService();
-    try { await _crypto.init(); } catch (_) {}
-
-    // Disable Firestore offline persistence — IndexedDB in Safari triggers
-    // unhandled promise rejections that freeze Dart's async event loop.
     try {
-      FirebaseFirestore.instance.settings =
-          const Settings(persistenceEnabled: false);
-    } catch (_) {}
+      _crypto = CryptoService();
+      try { await _crypto.init(); } catch (_) {}
 
-    // LocalFileStore uses IndexedDB. Safari Private mode may never resolve
-    // the open() call, so we timeout after 3 s and degrade gracefully.
-    _localFiles = LocalFileStore();
-    try {
-      await _localFiles.init().timeout(const Duration(seconds: 3));
-    } catch (_) {}
+      // Disable Firestore offline persistence — IndexedDB in Safari triggers
+      // unhandled promise rejections that freeze Dart's async event loop.
+      try {
+        FirebaseFirestore.instance.settings =
+            const Settings(persistenceEnabled: false);
+      } catch (_) {}
 
-    _offline = OfflineService(
-        db: FirebaseFirestore.instance, crypto: _crypto);
-    try { _offline.startListening(); } catch (_) {}
+      // LocalFileStore uses IndexedDB. Safari Private mode may never resolve
+      // the open() call, so we timeout after 3 s and degrade gracefully.
+      _localFiles = LocalFileStore();
+      try {
+        await _localFiles.init().timeout(const Duration(seconds: 3));
+      } catch (_) {}
 
-    _smsService = SmsFallbackService(crypto: _crypto, fileStore: _localFiles);
-    try { _smsService.startMonitoring(); } catch (_) {}
+      _offline = OfflineService(
+          db: FirebaseFirestore.instance, crypto: _crypto);
+      try { _offline.startListening(); } catch (_) {}
+
+      _smsService = SmsFallbackService(crypto: _crypto, fileStore: _localFiles);
+      try { _smsService.startMonitoring(); } catch (_) {}
+    } catch (e) {
+      // Fatal init error — still transition to app (shows auth screen).
+      _crypto = CryptoService();
+      _localFiles = LocalFileStore();
+      _offline = OfflineService(db: FirebaseFirestore.instance, crypto: _crypto);
+      _smsService = SmsFallbackService(crypto: _crypto, fileStore: _localFiles);
+    }
 
     if (mounted) setState(() => _ready = true);
   }
@@ -178,6 +197,42 @@ class SecureChatApp extends StatelessWidget {
             localFiles: localFiles,
           );
         },
+      ),
+    );
+  }
+}
+
+/// Shown only when Firebase.initializeApp() itself fails.
+class _ErrorApp extends StatelessWidget {
+  final String message;
+  const _ErrorApp(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF0d0d0d),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 64),
+                const SizedBox(height: 16),
+                const Text('SecureChat — Error de inicio',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                SelectableText(message,
+                    style: const TextStyle(color: Colors.red, fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
