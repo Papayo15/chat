@@ -61,23 +61,12 @@ class ChatsScreen extends StatelessWidget {
             stream: smsService.connectionStatus,
             builder: (ctx, snap) {
               final isOffline = snap.data == ConnectionStatus.offline;
-              return Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: Chip(
-                  label: Text(
-                    isOffline ? 'Sin red' : 'En línea',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  avatar: Icon(
-                    isOffline ? Icons.wifi_off : Icons.wifi,
-                    size: 14,
-                    color: isOffline ? Colors.orange : Colors.green,
-                  ),
-                  backgroundColor: isOffline
-                      ? Colors.orange.withAlpha(30)
-                      : Colors.green.withAlpha(30),
-                  side: BorderSide.none,
-                  visualDensity: VisualDensity.compact,
+              return Tooltip(
+                message: isOffline ? 'Sin red' : 'En línea',
+                child: Icon(
+                  isOffline ? Icons.wifi_off : Icons.wifi,
+                  color: isOffline ? Colors.orange : Colors.green,
+                  size: 20,
                 ),
               );
             },

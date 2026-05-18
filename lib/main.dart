@@ -23,9 +23,33 @@ import 'ui/screens/chats_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Catch all Flutter widget-tree errors and show them on screen in release mode.
+  // Show widget errors visibly on screen instead of blank gray canvas.
   FlutterError.onError = (FlutterErrorDetails details) {
     FlutterError.presentError(details);
+  };
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0d0d0d),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.bug_report, color: Colors.red, size: 48),
+              const SizedBox(height: 12),
+              const Text('Error interno — copia este texto:',
+                  style: TextStyle(color: Colors.white70, fontSize: 13)),
+              const SizedBox(height: 8),
+              SelectableText(
+                details.exception.toString(),
+                style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   };
 
   // Show UI immediately — never block runApp() on service init.
