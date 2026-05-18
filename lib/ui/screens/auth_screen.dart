@@ -112,6 +112,13 @@ class _AuthScreenState extends State<AuthScreen>
     } on FirebaseAuthException catch (e) {
       _showError(_friendly(e));
     } catch (e) {
+      // Firebase may throw internal SDK errors (e.g. log polling timeout)
+      // even when auth succeeded. Check if user is actually signed in.
+      final current = FirebaseAuth.instance.currentUser;
+      if (current != null) {
+        try { await widget.userRepo.registerOrLogin(current); } catch (_) {}
+        return;
+      }
       _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -154,6 +161,12 @@ class _AuthScreenState extends State<AuthScreen>
     } on FirebaseAuthException catch (e) {
       _showError(_friendly(e));
     } catch (e) {
+      final current = FirebaseAuth.instance.currentUser;
+      if (current != null) {
+        final hash = IdentityService.hashPhone(_phoneCtrl.text.trim());
+        try { await widget.userRepo.registerOrLogin(current, phoneHash: hash); } catch (_) {}
+        return;
+      }
       _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -171,6 +184,11 @@ class _AuthScreenState extends State<AuthScreen>
     } on FirebaseAuthException catch (e) {
       _showError(_friendly(e));
     } catch (e) {
+      final current = FirebaseAuth.instance.currentUser;
+      if (current != null) {
+        try { await widget.userRepo.registerOrLogin(current); } catch (_) {}
+        return;
+      }
       _showError(e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);

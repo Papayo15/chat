@@ -86,12 +86,17 @@
       if (!reason) return;
       var name = reason.name || '';
       var msg  = (reason.message || '') + (reason.code || '');
-      // Absorb Firebase IndexedDB failures silently — auth still works without them
+      // Absorb Firebase IndexedDB / Installations failures silently.
+      // Firebase uses IndexedDB for Installation IDs; in Safari these fail but
+      // Auth still works. These unhandled rejections must not reach Dart.
       if (name === 'AbortError' || name === 'UnknownError' ||
           msg.indexOf('idb') !== -1 || msg.indexOf('IndexedDB') !== -1 ||
-          msg.indexOf('object store') !== -1) {
+          msg.indexOf('object store') !== -1 ||
+          msg.indexOf('log polling timeout') !== -1 ||
+          msg.indexOf('log poling timeout') !== -1 ||
+          msg.indexOf('app/idb') !== -1) {
         event.preventDefault();
-        console.warn('[SecureChat] Firebase IndexedDB error suppressed (Safari workaround):', name, msg);
+        console.warn('[SecureChat] Firebase internal error suppressed:', name, msg);
         return;
       }
     });
