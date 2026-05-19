@@ -118,8 +118,11 @@
       if (name === 'AbortError' || name === 'UnknownError' ||
           msg.indexOf('idb') !== -1 || msg.indexOf('IndexedDB') !== -1 ||
           msg.indexOf('object store') !== -1 ||
-          msg.indexOf('log polling timeout') !== -1 ||
-          msg.indexOf('log poling timeout') !== -1 ||
+          msg.indexOf('long polling') !== -1 ||
+          msg.indexOf('log polling') !== -1 ||
+          msg.indexOf('log poling') !== -1 ||
+          msg.indexOf('polling timeout') !== -1 ||
+          msg.indexOf('timeout: null') !== -1 ||
           msg.indexOf('app/idb') !== -1) {
         event.preventDefault();
         return;

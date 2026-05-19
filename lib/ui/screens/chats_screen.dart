@@ -81,6 +81,12 @@ class ChatsScreen extends StatelessWidget {
       body: StreamBuilder<List<Chat>>(
         stream: chatRepo.chatsStream(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Text('Error de conexión: ${snap.error}',
+                  style: const TextStyle(color: Colors.orange, fontSize: 12)),
+            );
+          }
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }

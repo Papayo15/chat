@@ -93,11 +93,15 @@ class _AppBootstrapState extends State<_AppBootstrap> {
       _crypto = CryptoService();
       try { await _crypto.init(); } catch (_) {}
 
-      // Disable Firestore offline persistence — IndexedDB in Safari triggers
-      // unhandled promise rejections that freeze Dart's async event loop.
+      // Disable offline persistence AND long-polling transport.
+      // The Firebase JS SDK throws "invalid long polling timeout: null" when
+      // long-polling initialises with null defaults in some browsers.
+      // webExperimentalForceLongPolling: false forces WebSocket-only transport.
       try {
-        FirebaseFirestore.instance.settings =
-            const Settings(persistenceEnabled: false);
+        FirebaseFirestore.instance.settings = const Settings(
+          persistenceEnabled: false,
+          webExperimentalForceLongPolling: false,
+        );
       } catch (_) {}
 
       // LocalFileStore uses IndexedDB. Safari Private mode may never resolve
