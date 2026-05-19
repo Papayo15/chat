@@ -14,13 +14,19 @@ class ChatRepository {
         _auth = auth;
 
   Stream<List<Chat>> chatsStream() {
-    final uid = _auth.currentUser!.uid;
-    return _db
-        .collection('chats')
-        .where('participants', arrayContains: uid)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snap) => snap.docs.map(Chat.fromDoc).toList());
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return const Stream.empty();
+      return _db
+          .collection('chats')
+          .where('participants', arrayContains: uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snap) => snap.docs.map(Chat.fromDoc).toList())
+          .handleError((_) => <Chat>[]);
+    } catch (_) {
+      return const Stream.empty();
+    }
   }
 
   Future<Chat> createOrFindChat(List<String> participantUids) async {

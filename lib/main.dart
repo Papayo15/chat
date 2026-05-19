@@ -20,32 +20,36 @@ import 'services/video_call_service.dart';
 import 'ui/screens/auth_screen.dart';
 import 'ui/screens/chats_screen.dart';
 
+bool _isFirebaseTransportError(Object e) {
+  final s = e.toString().toLowerCase();
+  return s.contains('long polling') ||
+      s.contains('timeout: null') ||
+      s.contains('invalid-argument') ||
+      s.contains('log poll');
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Show widget errors visibly on screen instead of blank gray canvas.
+  // Suppress Firebase Firestore transport errors (long polling timeout: null)
+  // at the Flutter error level so they never replace the widget tree.
   FlutterError.onError = (FlutterErrorDetails details) {
+    if (_isFirebaseTransportError(details.exception)) return;
     FlutterError.presentError(details);
   };
   ErrorWidget.builder = (FlutterErrorDetails details) {
+    // Firebase transport errors must not replace the widget with a red screen.
+    if (_isFirebaseTransportError(details.exception)) {
+      return const SizedBox.shrink();
+    }
     return Scaffold(
       backgroundColor: const Color(0xFF0d0d0d),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.bug_report, color: Colors.red, size: 48),
-              const SizedBox(height: 12),
-              const Text('Error interno — copia este texto:',
-                  style: TextStyle(color: Colors.white70, fontSize: 13)),
-              const SizedBox(height: 8),
-              SelectableText(
-                details.exception.toString(),
-                style: const TextStyle(color: Colors.redAccent, fontSize: 11),
-              ),
-            ],
+          child: SelectableText(
+            details.exception.toString(),
+            style: const TextStyle(color: Colors.redAccent, fontSize: 12),
           ),
         ),
       ),
@@ -53,7 +57,6 @@ Future<void> main() async {
   };
 
   // Show UI immediately — never block runApp() on service init.
-  // Firebase.initializeApp() itself is the only required async step.
   try {
     await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform);
@@ -101,6 +104,7 @@ class _AppBootstrapState extends State<_AppBootstrap> {
         FirebaseFirestore.instance.settings = const Settings(
           persistenceEnabled: false,
           webExperimentalForceLongPolling: false,
+          webExperimentalAutoDetectLongPolling: false,
         );
       } catch (_) {}
 
