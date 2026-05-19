@@ -135,15 +135,30 @@ class _AuthScreenState extends State<AuthScreen>
     setState(() => _loading = true);
     try {
       final svc = IdentityService();
+      // 30 s timeout — reCAPTCHA hangs silently if Phone provider is not
+      // enabled in Firebase Console or if Google's script is blocked.
       _confirmation = await svc.sendPhoneOtp(
         phoneE164: phone,
         recaptchaContainerId: 'recaptcha-container',
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw Exception(
+          'Tiempo agotado (30 s).\n\n'
+          'Posibles causas:\n'
+          '• El proveedor "Teléfono" no está habilitado en Firebase Console\n'
+          '  → Authentication → Sign-in method → Phone → Activar\n'
+          '• El dominio no está autorizado\n'
+          '  → Authentication → Settings → Authorized domains\n'
+          '• La red bloquea Google reCAPTCHA',
+        ),
       );
       if (mounted) setState(() { _otpSent = true; _loading = false; });
     } on FirebaseAuthException catch (e) {
       _showError(_friendly(e));
     } catch (e) {
       _showError(e.toString());
+    } finally {
+      if (mounted && _loading) setState(() => _loading = false);
     }
   }
 
